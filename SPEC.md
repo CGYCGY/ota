@@ -301,12 +301,15 @@ Add a `HEALTHCHECK` hitting `/healthz` if you like.
 3. **Domain:** set a neutral subdomain, e.g. `install.<yourdomain>.com` (this is shared
    infra — don't name it after one product). Coolify provisions the TLS cert
    automatically; that cert is what satisfies iOS's trusted-HTTPS requirement.
-4. **Env vars:** set `PUBLIC_BASE_URL` (= that https subdomain), `UPLOAD_TOKEN`
-   (a long random string), optionally `BASIC_AUTH_*`.
+4. **Env vars:** set `PUBLIC_BASE_URL` (= that https subdomain), `ADMIN_PASSWORD`
+   (the human `/login` password), and `SESSION_SECRET` (a long random string). See §10
+   for the full list. CI upload access is **not** an env var — mint per-project tokens
+   from the UI after first login (§4b).
 5. **Persistent storage:** mount a volume at `/data`.
 6. Confirm Traefik/proxy does not cap upload body size below `MAX_UPLOAD_MB`
    (Traefik default is unlimited; only an explicit middleware would cap it).
 7. Deploy. Hit `https://install.<yourdomain>.com/healthz` → `200`.
+8. Log in at `/login`, mint your first upload token (§4b), and you're live.
 
 ---
 
