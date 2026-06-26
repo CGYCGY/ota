@@ -4,7 +4,8 @@ A tiny, self-hosted replacement for Diawi: upload a signed iOS `.ipa`, get an HT
 install page with a QR code that installs the app over-the-air on iPhone. App-agnostic
 and multi-project — deploy **once**, reuse across every iOS app.
 
-See [`SPEC.md`](./SPEC.md) for the full design and the iOS constraints that drive it.
+- [`docs/spec.md`](./docs/spec.md) — full design and the iOS constraints that drive it.
+- [`docs/architecture.html`](./docs/architecture.html) — architecture & request-flow diagrams (open in a browser).
 
 ## How it works
 
