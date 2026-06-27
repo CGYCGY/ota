@@ -2,3 +2,7 @@ node_modules/
 data/
 *.log
 .DS_Store
+
+# deploy-time secrets (manager-managed; never commit)
+deploy/.env.runtime
+deploy/.env.deploy
