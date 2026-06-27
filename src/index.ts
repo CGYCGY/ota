@@ -8,7 +8,7 @@ import {
   saveUpload, getMeta, isExpired, deleteUpload, sweepExpired,
   ipaPath, manifestPath, uploadDir,
 } from "./storage.ts";
-import { listTokens, createToken, revokeToken, validateToken } from "./tokens.ts";
+import { listTokens, createToken, deleteToken, validateToken } from "./tokens.ts";
 import {
   checkPassword, createSessionCookieValue, verifySessionCookie, SESSION_COOKIE_NAME,
 } from "./auth.ts";
@@ -137,17 +137,19 @@ app.post("/tokens", async (c) => {
   return c.html(tokensPage(await listTokens(), secret));
 });
 
-// HTML forms can't issue DELETE; the revoke button posts here.
+// No-JS fallback: HTML forms can't issue DELETE, so the revoke button posts
+// here and the deleted row simply vanishes on the redirect.
 app.post("/tokens/:id/revoke", async (c) => {
   if (!hasSession(c)) return c.redirect("/login");
-  await revokeToken(c.req.param("id"));
+  await deleteToken(c.req.param("id"));
   return c.redirect("/tokens");
 });
 
+// The JS path: revoke without a reload, then the row clears on next refresh.
 app.delete("/tokens/:id", async (c) => {
   if (!hasSession(c)) return c.json({ error: "unauthorized" }, 401);
-  const ok = await revokeToken(c.req.param("id"));
-  return c.json({ revoked: ok });
+  const ok = await deleteToken(c.req.param("id"));
+  return c.json({ deleted: ok });
 });
 
 // --- upload (humans via session OR CI via bearer token) --------------------

@@ -149,11 +149,11 @@ export function tokensPage(tokens: TokenPublic[], newSecret?: string): string {
 <td>${esc(t.label)}</td>
 <td>${esc(fmtDate(t.createdAt))}</td>
 <td>${t.lastUsedAt ? esc(fmtDate(t.lastUsedAt)) : "never"}</td>
-<td class="${t.revoked ? "status-revoked" : "status-active"}">${t.revoked ? "revoked" : "active"}</td>
+<td class="statuscell ${t.revoked ? "status-revoked" : "status-active"}">${t.revoked ? "revoked" : "active"}</td>
 <td>${
         t.revoked
           ? ""
-          : `<form method="POST" action="/tokens/${esc(t.id)}/revoke"><button class="inline" type="submit">Revoke</button></form>`
+          : `<form class="revoke" method="POST" action="/tokens/${esc(t.id)}/revoke" data-id="${esc(t.id)}"><button class="inline" type="submit">Revoke</button></form>`
       }</td>
 </tr>`,
     )
@@ -199,6 +199,22 @@ ${
 <thead><tr><th>Label</th><th>Created</th><th>Last used</th><th>Status</th><th></th></tr></thead>
 <tbody>${rows || `<tr><td colspan="5" class="muted">No tokens yet.</td></tr>`}</tbody>
 </table>
-<a class="link" href="/">Back</a>`;
+<a class="link" href="/">Back</a>
+<script>
+// Revoke deletes the token server-side; show "revoked" in place without a reload
+// (it's gone from storage, so a refresh drops the row). No-JS just posts the form.
+document.querySelectorAll('form.revoke').forEach(function(f){
+  f.addEventListener('submit',function(ev){
+    if(!window.fetch) return; // let the plain POST handle it
+    ev.preventDefault();
+    fetch('/tokens/'+f.getAttribute('data-id'),{method:'DELETE'}).then(function(r){
+      if(!r.ok){f.submit();return}
+      var row=f.closest('tr'),cell=row&&row.querySelector('.statuscell');
+      if(cell){cell.textContent='revoked';cell.className='statuscell status-revoked'}
+      f.remove();
+    }).catch(function(){f.submit()});
+  });
+});
+</script>`;
   return layout("CI tokens", body);
 }

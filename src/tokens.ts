@@ -69,12 +69,14 @@ export async function createToken(label: string): Promise<{ token: TokenPublic; 
   return { token: toPublic(token), secret };
 }
 
-export async function revokeToken(id: string): Promise<boolean> {
+// Revoking a token deletes it outright: the hash is useless once gone, and we
+// keep no audit trail. The UI flips the row to "revoked" client-side for the
+// moment, but a refresh re-reads storage and the row is gone.
+export async function deleteToken(id: string): Promise<boolean> {
   const tokens = await readTokens();
-  const t = tokens.find((x) => x.id === id);
-  if (!t) return false;
-  t.revoked = true;
-  await writeTokens(tokens);
+  const next = tokens.filter((x) => x.id !== id);
+  if (next.length === tokens.length) return false;
+  await writeTokens(next);
   return true;
 }
 
