@@ -19,6 +19,13 @@ import { promises as fs } from "node:fs";
 
 const app = new Hono();
 
+// Advertise the agent-readable API guide on every response (incl. the /login
+// redirect), so an agent pointed at the bare host discovers it via the header.
+app.use("*", async (c, next) => {
+  await next();
+  c.header("Link", '</llms.txt>; rel="llms-txt"');
+});
+
 // --- helpers ---------------------------------------------------------------
 
 function hasSession(c: import("hono").Context): boolean {
@@ -39,6 +46,48 @@ async function loadLiveMeta(id: string) {
 // --- public health ---------------------------------------------------------
 
 app.get("/healthz", (c) => c.text("OK"));
+
+// --- agent-readable API guide (public, plaintext) --------------------------
+
+app.get("/llms.txt", (c) => {
+  const base = config.publicBaseUrl;
+  return c.text(
+    `# ${new URL(base).host} — self-hosted iOS OTA install server
+
+Upload a signed .ipa, get a public HTTPS install page + QR for over-the-air
+iPhone install. App-agnostic; one server hosts many projects.
+
+## Publish a build (CI / agents)
+POST ${base}/upload
+  Auth:  Authorization: Bearer <token>      # humans mint tokens at ${base}/tokens (login at /login)
+  Body:  multipart/form-data, field "file" = the .ipa
+  Limit: ${config.maxUploadMb} MB max
+
+  curl -H "Authorization: Bearer $OTA_TOKEN" -F file=@App.ipa ${base}/upload
+
+Response 200 (application/json):
+  {
+    "id": "<hex>",
+    "install_url": "${base}/i/<id>",
+    "app": { "name": "...", "bundleId": "...", "version": "...", "build": "..." },
+    "expires_at": "<ISO-8601>"
+  }
+
+Errors: 401 (missing/invalid token), 400 (no "file" field or unreadable .ipa), 413 (too large).
+
+## Install on device
+Open install_url in **Safari** on a UDID-registered device, tap Install.
+The device's UDID must be in the .ipa's ad-hoc/enterprise provisioning profile.
+
+## Notes
+- Builds expire ${config.ttlHours}h after upload; re-upload to refresh.
+- install_url is public and unguessable — iOS fetches the manifest/ipa with no auth headers.
+- Two credentials hit /upload: a session cookie (humans, via /login) OR a Bearer token (CI/agents).
+`,
+    200,
+    { "Content-Type": "text/plain; charset=utf-8" },
+  );
+});
 
 // --- human auth ------------------------------------------------------------
 
