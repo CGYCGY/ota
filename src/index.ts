@@ -3,10 +3,11 @@ import { getCookie, setCookie, deleteCookie } from "hono/cookie";
 import { bodyLimit } from "hono/body-limit";
 import { config } from "./config.ts";
 import { parseIpa } from "./ipa.ts";
+import { parseApk } from "./apk.ts";
 import { installLink } from "./manifest.ts";
 import {
   saveUpload, getMeta, isExpired, deleteUpload, sweepExpired,
-  ipaPath, manifestPath, uploadDir,
+  appPath, manifestPath, uploadDir,
 } from "./storage.ts";
 import { listTokens, createToken, deleteToken, validateToken } from "./tokens.ts";
 import {
@@ -52,36 +53,42 @@ app.get("/healthz", (c) => c.text("OK"));
 app.get("/llms.txt", (c) => {
   const base = config.publicBaseUrl;
   return c.text(
-    `# ${new URL(base).host} — self-hosted iOS OTA install server
+    `# ${new URL(base).host} — self-hosted iOS + Android OTA install server
 
-Upload a signed .ipa, get a public HTTPS install page + QR for over-the-air
-iPhone install. App-agnostic; one server hosts many projects.
+Upload a signed .ipa or an .apk, get a public HTTPS install page + QR for
+over-the-air install. App-agnostic; one server hosts many projects.
 
 ## Publish a build (CI / agents)
 POST ${base}/upload
   Auth:  Authorization: Bearer <token>      # humans mint tokens at ${base}/tokens (login at /login)
-  Body:  multipart/form-data, field "file" = the .ipa
+  Body:  multipart/form-data
+           field "file" = the .ipa or .apk   (platform is detected from the extension)
+           field "name" = optional display name (Android label override; ignored for iOS)
   Limit: ${config.maxUploadMb} MB max
 
   curl -H "Authorization: Bearer $OTA_TOKEN" -F file=@App.ipa ${base}/upload
+  curl -H "Authorization: Bearer $OTA_TOKEN" -F file=@app-release.apk -F name=Expari ${base}/upload
 
 Response 200 (application/json):
   {
     "id": "<hex>",
     "install_url": "${base}/i/<id>",
+    "platform": "ios" | "android",
     "app": { "name": "...", "bundleId": "...", "version": "...", "build": "..." },
     "expires_at": "<ISO-8601>"
   }
 
-Errors: 401 (missing/invalid token), 400 (no "file" field or unreadable .ipa), 413 (too large).
+Errors: 401 (missing/invalid token), 400 (no "file" field, not a .ipa/.apk, or unreadable), 413 (too large).
 
 ## Install on device
-Open install_url in **Safari** on a UDID-registered device, tap Install.
-The device's UDID must be in the .ipa's ad-hoc/enterprise provisioning profile.
+iOS:     open install_url in **Safari** on a UDID-registered device, tap Install.
+         The device's UDID must be in the .ipa's ad-hoc/enterprise provisioning profile.
+Android: open install_url in **any browser**, tap Download, then tap the file to install.
+         No Safari, no UDID. The OS may prompt to allow installs from the browser once.
 
 ## Notes
 - Builds expire ${config.ttlHours}h after upload; re-upload to refresh.
-- install_url is public and unguessable — iOS fetches the manifest/ipa with no auth headers.
+- install_url is public and unguessable — devices fetch the manifest/ipa/apk with no auth headers.
 - Two credentials hit /upload: a session cookie (humans, via /login) OR a Bearer token (CI/agents).
 `,
     200,
@@ -175,20 +182,33 @@ app.post(
     if (!(file instanceof File)) {
       return c.json({ error: "missing file field" }, 400);
     }
-    const ipaBytes = new Uint8Array(await file.arrayBuffer());
+    // Platform is driven purely off the extension — the parser to use and the
+    // on-disk filename both follow from it.
+    const lower = file.name.toLowerCase();
+    const platform = lower.endsWith(".apk") ? "android" : lower.endsWith(".ipa") ? "ios" : null;
+    if (!platform) {
+      return c.json({ error: "file must be a .ipa or .apk" }, 400);
+    }
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    // Optional display-name override (Android label lives in arsc, not parsed).
+    const nameOverride = typeof body.name === "string" ? body.name : undefined;
 
     let info;
     try {
-      info = await parseIpa(ipaBytes, file.name);
+      info =
+        platform === "android"
+          ? await parseApk(bytes, file.name, nameOverride)
+          : await parseIpa(bytes, file.name);
     } catch (e) {
       return c.json({ error: (e as Error).message }, 400);
     }
 
-    const { id, meta } = await saveUpload({ info, ipaBytes, originalFilename: file.name });
+    const { id, meta } = await saveUpload({ info, bytes, originalFilename: file.name });
 
     return c.json({
       id,
       install_url: `${config.publicBaseUrl}/i/${id}`,
+      platform: meta.platform,
       app: { name: meta.name, bundleId: meta.bundleId, version: meta.version, build: meta.build },
       expires_at: new Date(meta.uploadedAt + config.ttlHours * 3600_000).toISOString(),
     });
@@ -208,7 +228,7 @@ app.get("/i/:id", async (c) => {
 app.get("/i/:id/manifest.plist", async (c) => {
   const id = c.req.param("id");
   const meta = await loadLiveMeta(id);
-  if (!meta) return c.text("Not found", 404);
+  if (!meta || meta.platform !== "ios") return c.text("Not found", 404);
   const xml = await fs.readFile(manifestPath(id), "utf8").catch(() => null);
   if (xml === null) return c.text("Not found", 404);
   // Some iOS versions reject the manifest with any other Content-Type.
@@ -218,12 +238,26 @@ app.get("/i/:id/manifest.plist", async (c) => {
 app.get("/i/:id/app.ipa", async (c) => {
   const id = c.req.param("id");
   const meta = await loadLiveMeta(id);
-  if (!meta) return c.text("Not found", 404);
-  const bytes = await fs.readFile(ipaPath(id)).catch(() => null);
+  if (!meta || meta.platform !== "ios") return c.text("Not found", 404);
+  const bytes = await fs.readFile(appPath(id, "ios")).catch(() => null);
   if (bytes === null) return c.text("Not found", 404);
   return c.body(bytes, 200, {
     "Content-Type": "application/octet-stream",
     "Content-Disposition": `attachment; filename="${meta.bundleId}.ipa"`,
+  });
+});
+
+app.get("/i/:id/app.apk", async (c) => {
+  const id = c.req.param("id");
+  const meta = await loadLiveMeta(id);
+  if (!meta || meta.platform !== "android") return c.text("Not found", 404);
+  const bytes = await fs.readFile(appPath(id, "android")).catch(() => null);
+  if (bytes === null) return c.text("Not found", 404);
+  // The vnd.android mime is mandatory — a generic type makes the browser save a
+  // .zip and Android's package installer never fires.
+  return c.body(bytes, 200, {
+    "Content-Type": "application/vnd.android.package-archive",
+    "Content-Disposition": `attachment; filename="${meta.bundleId}.apk"`,
   });
 });
 

@@ -1,29 +1,36 @@
 # OTA Install Server
 
-A tiny, self-hosted replacement for Diawi: upload a signed iOS `.ipa`, get an HTTPS
-install page with a QR code that installs the app over-the-air on iPhone. App-agnostic
-and multi-project — deploy **once**, reuse across every iOS app.
+A tiny, self-hosted replacement for Diawi: upload a signed iOS `.ipa` or an Android
+`.apk`, get an HTTPS install page with a QR code that installs the app over-the-air.
+App-agnostic and multi-project — deploy **once**, reuse across every app.
 
 - [`docs/spec.md`](./docs/spec.md) — full design and the iOS constraints that drive it.
 - [`docs/architecture.html`](./docs/architecture.html) — architecture & request-flow diagrams (open in a browser).
 
 ## How it works
 
-1. Upload an `.ipa` (drag-and-drop in the UI, or `POST /upload` with a CI token).
-2. The server parses the IPA's `Info.plist`, stores it under an unguessable id, and
-   generates an Apple OTA `manifest.plist`.
-3. You get an install page `…/i/<id>` with an **Install** button and a **QR code**.
-4. Open it in **Safari** on a registered iPhone → tap Install → app installs OTA.
+1. Upload an `.ipa` or `.apk` (drag-and-drop in the UI, or `POST /upload` with a CI token).
+   Platform is detected from the extension.
+2. The server parses the build's metadata, stores it under an unguessable id, and — for
+   iOS — generates an Apple OTA `manifest.plist`. (Android needs no manifest.)
+3. You get an install page `…/i/<id>` with a **QR code** and an action button.
+4. **iOS:** open in **Safari** on a registered iPhone → tap Install → app installs OTA.
+   **Android:** open in **any browser** → tap Download → tap the file → installer runs.
 5. Each upload auto-deletes after `TTL_HOURS` (default 24h).
 
-> The server only handles **delivery**. The IPA must be **ad-hoc/enterprise/dev signed**
-> and the iPhone's **UDID registered** in the provisioning profile — Apple's rules, not
+> The server only handles **delivery**. iOS IPAs must be **ad-hoc/enterprise/dev signed**
+> with the iPhone's **UDID registered** in the provisioning profile (Apple's rules). For
+> Android, the OS prompts once to allow installs from the browser — device-side, not
 > something this server controls.
+>
+> The Android display name comes from the optional `name` upload field (or the filename) —
+> the APK's real label lives in `resources.arsc`, which we don't parse.
 
 ## Stack
 
 Bun + [Hono](https://hono.dev). `fflate` (unzip) · `bplist-parser` (binary plist) ·
-`qrcode` (server-rendered QR). Single service, single container.
+`@devicefarmer/adbkit-apkreader` (APK manifest) · `qrcode` (server-rendered QR).
+Single service, single container.
 
 ## Run locally
 
@@ -50,16 +57,17 @@ Locally you can exercise the API/UI, but device installs require the deployed HT
 
 | Method | Path | Auth | Purpose |
 |---|---|---|---|
-| `POST` | `/upload` | bearer **or** session | multipart `.ipa` → install URL (JSON) |
+| `POST` | `/upload` | bearer **or** session | multipart `.ipa`/`.apk` (+ optional `name`) → install URL (JSON) |
 | `GET` | `/login` | public | password form |
 | `POST` | `/login` | public | sets session cookie |
 | `GET` | `/` | session | drag-and-drop upload form |
 | `GET` | `/tokens` | session | list CI tokens |
 | `POST` | `/tokens` | session | create token (secret shown once) |
 | `POST` | `/tokens/:id/revoke` | session | revoke a token |
-| `GET` | `/i/:id` | public | install page (itms link + QR) |
-| `GET` | `/i/:id/manifest.plist` | public | OTA manifest (`text/xml`) |
+| `GET` | `/i/:id` | public | install page (Install/Download + QR) |
+| `GET` | `/i/:id/manifest.plist` | public | iOS OTA manifest (`text/xml`) |
 | `GET` | `/i/:id/app.ipa` | public | the IPA (`application/octet-stream`) |
+| `GET` | `/i/:id/app.apk` | public | the APK (`application/vnd.android.package-archive`) |
 | `GET` | `/healthz` | public | health check |
 
 ## CI usage (Codemagic example)

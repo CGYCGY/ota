@@ -82,18 +82,28 @@ export async function installPage(args: {
   installLink: string;
   pageUrl: string;
 }): Promise<string> {
-  const { meta, installLink, pageUrl } = args;
+  const { id, meta, installLink, pageUrl } = args;
   // QR encodes the https page URL, not the itms-services:// link: scanners handle https
-  // far more reliably, and the user then taps Install from Safari on this same page.
+  // far more reliably, and the user then taps the action on this same page.
   const qr = await QRCode.toDataURL(pageUrl);
+  const android = meta.platform === "android";
+  // iOS installs via the itms-services manifest link; Android downloads the .apk and the
+  // user taps it to run the OS package installer (the vnd.android mime makes that fire).
+  const action = android
+    ? `<a class="btn spacer" href="/i/${esc(id)}/app.apk" download>Download</a>`
+    : `<a class="btn spacer" href="${esc(installLink)}">Install</a>`;
+  const note = android
+    ? `<div class="muted">Scan with another phone to open this page.</div>
+<div class="note">Tap the downloaded file to install. You may be asked to allow installs from your browser the first time. Expires in ${esc(config.ttlHours)} hours.</div>`
+    : `<div class="muted">Scan with another iPhone to open this page.</div>
+<div class="note">Open in Safari. Expires in ${esc(config.ttlHours)} hours.</div>`;
   const body = `
 <h1>${esc(meta.name)}</h1>
 <div class="ver">Version ${esc(meta.version)} (${esc(meta.build)})</div>
 <div class="muted">${esc(meta.bundleId)}</div>
-<a class="btn spacer" href="${esc(installLink)}">Install</a>
+${action}
 <img class="qr" src="${qr}" alt="QR code">
-<div class="muted">Scan with another iPhone to open this page.</div>
-<div class="note">Open in Safari. Expires in ${esc(config.ttlHours)} hours.</div>`;
+${note}`;
   return layout(meta.name, body);
 }
 
@@ -118,13 +128,16 @@ ${error ? `<div class="err">${esc(error)}</div>` : ""}
 }
 
 export function uploadPage(): string {
+  const placeholder = "Drop an .ipa or .apk here or tap to choose";
   const body = `
-<h1>Upload IPA</h1>
+<h1>Upload build</h1>
 <form method="POST" action="/upload" enctype="multipart/form-data">
 <label class="drop" id="drop">
-  <span id="droptext">Drop an .ipa here or tap to choose</span>
-  <input type="file" name="file" accept=".ipa" required>
+  <span id="droptext">${placeholder}</span>
+  <input type="file" name="file" accept=".ipa,.apk" required>
 </label>
+<label for="name">App name <span class="muted">(optional — Android label)</span></label>
+<input id="name" name="name" type="text" placeholder="e.g. Expari">
 <button class="btn spacer" type="submit">Upload</button>
 </form>
 <a class="link" href="/tokens">Manage CI tokens</a>
@@ -132,7 +145,7 @@ export function uploadPage(): string {
 (function(){
   var d=document.getElementById('drop'),t=document.getElementById('droptext'),
       i=d.querySelector('input');
-  function show(){t.textContent=i.files&&i.files.length?i.files[0].name:'Drop an .ipa here or tap to choose'}
+  function show(){t.textContent=i.files&&i.files.length?i.files[0].name:${JSON.stringify(placeholder)}}
   i.addEventListener('change',show);
   ['dragenter','dragover'].forEach(function(e){d.addEventListener(e,function(ev){ev.preventDefault();d.classList.add('over')})});
   ['dragleave','drop'].forEach(function(e){d.addEventListener(e,function(ev){ev.preventDefault();d.classList.remove('over')})});

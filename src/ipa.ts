@@ -1,6 +1,6 @@
 import { unzipSync } from "fflate";
 import bplist from "bplist-parser";
-import type { IpaInfo } from "./types.ts";
+import type { AppInfo } from "./types.ts";
 
 // Case-sensitive: Apple's tooling always emits exactly this casing; a loose
 // match could pick up nested .app bundles (extensions) inside Frameworks/Plugins.
@@ -10,7 +10,7 @@ const INFO_PLIST_RE = /^Payload\/[^/]+\.app\/Info\.plist$/;
 // time, but ad-hoc/resigned archives sometimes carry an XML plist instead.
 const BPLIST_MAGIC = [0x62, 0x70, 0x6c, 0x69, 0x73, 0x74];
 
-export async function parseIpa(buf: Uint8Array, originalFilename: string): Promise<IpaInfo> {
+export async function parseIpa(buf: Uint8Array, originalFilename: string): Promise<AppInfo> {
   let entries: Record<string, Uint8Array>;
   try {
     entries = unzipSync(buf);
@@ -39,7 +39,7 @@ export async function parseIpa(buf: Uint8Array, originalFilename: string): Promi
     originalFilename.replace(/\.ipa$/i, "") ||
     "App";
 
-  return { bundleId, version, build, name };
+  return { platform: "ios", bundleId, version, build, name };
 }
 
 function isBplist(bytes: Uint8Array): boolean {

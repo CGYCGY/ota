@@ -1,11 +1,11 @@
-// Per-upload storage layout + TTL sweep. Layout: DATA_DIR/<id>/{app.ipa, manifest.plist, icon.png?, meta.json}.
+// Per-upload storage layout + TTL sweep. Layout: DATA_DIR/<id>/{app.ipa|app.apk, manifest.plist?, icon.png?, meta.json}.
 
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { randomBytes } from "node:crypto";
 import { config } from "./config";
 import { buildManifest } from "./manifest";
-import type { IpaInfo, AppMeta } from "./types";
+import type { AppInfo, AppMeta, Platform } from "./types";
 
 // Security boundary: ids land in filesystem paths, so anything not matching this
 // is treated as not-found rather than joined into a path (blocks ../ traversal).
@@ -24,8 +24,8 @@ export function uploadDir(id: string): string {
   return path.join(config.dataDir, id);
 }
 
-export function ipaPath(id: string): string {
-  return path.join(uploadDir(id), "app.ipa");
+export function appPath(id: string, platform: Platform): string {
+  return path.join(uploadDir(id), platform === "android" ? "app.apk" : "app.ipa");
 }
 
 export function manifestPath(id: string): string {
@@ -37,8 +37,8 @@ function metaPath(id: string): string {
 }
 
 export async function saveUpload(args: {
-  info: IpaInfo;
-  ipaBytes: Uint8Array;
+  info: AppInfo;
+  bytes: Uint8Array;
   originalFilename: string;
 }): Promise<{ id: string; meta: AppMeta }> {
   const id = newId();
@@ -50,20 +50,24 @@ export async function saveUpload(args: {
     // uploadedAt is the TTL anchor — never derive TTL from fs mtimes (rsync/restore reset them).
     uploadedAt: Date.now(),
     originalFilename: args.originalFilename,
-    size: args.ipaBytes.length,
+    size: args.bytes.length,
   };
 
-  // Built here, not by the caller: the manifest's absolute app.ipa url needs the id
-  // we just minted, so storage owns it to avoid a chicken-and-egg with the caller.
-  const manifestXml = buildManifest({
-    id,
-    bundleId: args.info.bundleId,
-    version: args.info.version,
-    name: args.info.name,
-  });
+  await fs.writeFile(appPath(id, args.info.platform), args.bytes);
 
-  await fs.writeFile(ipaPath(id), args.ipaBytes);
-  await fs.writeFile(manifestPath(id), manifestXml);
+  // Android installs from a plain HTTPS download — no manifest. Only iOS needs the
+  // itms-services plist, whose absolute app.ipa url needs the id we just minted, so
+  // storage owns it to avoid a chicken-and-egg with the caller.
+  if (args.info.platform === "ios") {
+    const manifestXml = buildManifest({
+      id,
+      bundleId: args.info.bundleId,
+      version: args.info.version,
+      name: args.info.name,
+    });
+    await fs.writeFile(manifestPath(id), manifestXml);
+  }
+
   // meta.json is the existence/TTL signal, so write it LAST — a crash mid-upload
   // leaves a dir without meta.json, which getMeta/sweep treat as absent.
   await fs.writeFile(metaPath(id), JSON.stringify(meta));
@@ -75,7 +79,11 @@ export async function getMeta(id: string): Promise<AppMeta | null> {
   if (!isValidId(id)) return null;
   try {
     const raw = await fs.readFile(metaPath(id), "utf8");
-    return JSON.parse(raw) as AppMeta;
+    const meta = JSON.parse(raw) as AppMeta;
+    // Uploads predating multi-platform support have no `platform` — they're all iOS.
+    // Default it so their existing links keep resolving after deploy.
+    if (meta.platform !== "android") meta.platform = "ios";
+    return meta;
   } catch {
     // ENOENT or malformed JSON -> not found.
     return null;

@@ -8,9 +8,10 @@
     "dev": "bun --watch src/index.ts"
   },
   "dependencies": {
-    "hono": "^4.6.14",
-    "fflate": "^0.8.2",
+    "@devicefarmer/adbkit-apkreader": "^3.2.4",
     "bplist-parser": "^0.3.2",
+    "fflate": "^0.8.2",
+    "hono": "^4.6.14",
     "qrcode": "^1.5.4"
   },
   "devDependencies": {

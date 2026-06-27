@@ -1,15 +1,28 @@
 // Shared contracts across modules. Keep this dependency-free.
 
-/** Metadata extracted from an IPA's embedded Info.plist. */
-export interface IpaInfo {
+export type Platform = "ios" | "android";
+
+/**
+ * Build metadata extracted from an uploaded app. Field names are platform-neutral;
+ * the per-platform mapping is:
+ *   bundleId ← iOS CFBundleIdentifier        / Android package
+ *   version  ← iOS CFBundleShortVersionString / Android versionName
+ *   build    ← iOS CFBundleVersion            / Android versionCode (coerced to string)
+ *   name     ← display name
+ */
+export interface AppInfo {
+  platform: Platform;
   bundleId: string;
   version: string;
   build: string;
   name: string;
 }
 
+/** @deprecated kept as an alias to minimize churn in ipa.ts; use AppInfo. */
+export type IpaInfo = AppInfo;
+
 /** Persisted per-upload metadata (DATA_DIR/<id>/meta.json). */
-export interface AppMeta extends IpaInfo {
+export interface AppMeta extends AppInfo {
   /** Epoch ms; the TTL anchor — never use filesystem mtimes. */
   uploadedAt: number;
   originalFilename: string;
