@@ -149,12 +149,8 @@ export function tokensPage(tokens: TokenPublic[], newSecret?: string): string {
 <td>${esc(t.label)}</td>
 <td>${esc(fmtDate(t.createdAt))}</td>
 <td>${t.lastUsedAt ? esc(fmtDate(t.lastUsedAt)) : "never"}</td>
-<td class="statuscell ${t.revoked ? "status-revoked" : "status-active"}">${t.revoked ? "revoked" : "active"}</td>
-<td>${
-        t.revoked
-          ? ""
-          : `<form class="revoke" method="POST" action="/tokens/${esc(t.id)}/revoke" data-id="${esc(t.id)}"><button class="inline" type="submit">Revoke</button></form>`
-      }</td>
+<td class="statuscell status-active">active</td>
+<td><form class="revoke" method="POST" action="/tokens/${esc(t.id)}/revoke" data-id="${esc(t.id)}"><button class="inline" type="submit">Revoke</button></form></td>
 </tr>`,
     )
     .join("");

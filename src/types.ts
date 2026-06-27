@@ -24,7 +24,6 @@ export interface Token {
   hash: string;
   createdAt: number;
   lastUsedAt: number | null;
-  revoked: boolean;
 }
 
 /** Token shape safe to expose over the API — no hash, no secret. */
@@ -33,5 +32,4 @@ export interface TokenPublic {
   label: string;
   createdAt: number;
   lastUsedAt: number | null;
-  revoked: boolean;
 }

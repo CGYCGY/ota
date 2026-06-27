@@ -19,7 +19,6 @@ function toPublic(t: Token): TokenPublic {
     label: t.label,
     createdAt: t.createdAt,
     lastUsedAt: t.lastUsedAt,
-    revoked: t.revoked,
   };
 }
 
@@ -45,11 +44,7 @@ async function writeTokens(tokens: Token[]): Promise<void> {
 
 export async function listTokens(): Promise<TokenPublic[]> {
   const tokens = await readTokens();
-  // Legacy cleanup: older builds soft-revoked (kept a revoked:true row). Revoke
-  // now deletes outright, so purge any leftover revoked records on read.
-  const live = tokens.filter((t) => !t.revoked);
-  if (live.length !== tokens.length) await writeTokens(live);
-  return live.map(toPublic);
+  return tokens.map(toPublic);
 }
 
 export async function createToken(label: string): Promise<{ token: TokenPublic; secret: string }> {
@@ -62,7 +57,6 @@ export async function createToken(label: string): Promise<{ token: TokenPublic; 
     hash: sha256Hex(secret),
     createdAt: Date.now(),
     lastUsedAt: null,
-    revoked: false,
   };
 
   const tokens = await readTokens();
@@ -90,7 +84,6 @@ export async function validateToken(presentedSecret: string): Promise<Token | nu
 
   const tokens = await readTokens();
   for (const t of tokens) {
-    if (t.revoked) continue;
     const storedBuf = Buffer.from(t.hash, "hex");
     // Length guard first: timingSafeEqual throws on unequal lengths, and an
     // early length-mismatch reject leaks nothing here (all hashes are 32 bytes).
