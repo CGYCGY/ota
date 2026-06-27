@@ -45,7 +45,11 @@ async function writeTokens(tokens: Token[]): Promise<void> {
 
 export async function listTokens(): Promise<TokenPublic[]> {
   const tokens = await readTokens();
-  return tokens.map(toPublic);
+  // Legacy cleanup: older builds soft-revoked (kept a revoked:true row). Revoke
+  // now deletes outright, so purge any leftover revoked records on read.
+  const live = tokens.filter((t) => !t.revoked);
+  if (live.length !== tokens.length) await writeTokens(live);
+  return live.map(toPublic);
 }
 
 export async function createToken(label: string): Promise<{ token: TokenPublic; secret: string }> {
