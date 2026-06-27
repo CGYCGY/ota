@@ -51,8 +51,15 @@ input[type=text],input[type=password]{width:100%;padding:12px;border-radius:10px
 .drop input[type=file]{display:none}
 .err{background:#3a1d22;border:1px solid #5b2a31;color:#f3b7bf;padding:10px 12px;border-radius:10px;
   font-size:.85rem;margin-bottom:14px}
-.secret{background:#14171c;border:1px solid #2c313c;border-radius:10px;padding:12px;
-  font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.85rem;word-break:break-all;text-align:left}
+.secretbox{display:flex;gap:8px;align-items:stretch;text-align:left}
+.secretbox input{flex:1;min-width:0;background:#14171c;border:1px solid #2c313c;border-radius:10px;
+  color:#e6e8eb;padding:12px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.85rem}
+.iconbtn{border:1px solid #2c313c;background:#262c36;color:#cdd5e0;border-radius:10px;padding:0 12px;
+  cursor:pointer;font-size:.95rem}
+.copybtn{border:1px solid #2c313c;background:#262c36;color:#cdd5e0;border-radius:10px;padding:0 14px;
+  cursor:pointer;font-size:.85rem;font-weight:600;white-space:nowrap}
+.copybtn:active{background:#2f6fd6;color:#fff}
+.copybtn.copied{background:#1f3d2f;border-color:#2f6f4f;color:#5dd39e}
 .warn{color:#f0c674;font-size:.8rem;margin:10px 0 0}
 table{width:100%;border-collapse:collapse;margin-top:18px;font-size:.85rem;text-align:left}
 th,td{padding:8px 6px;border-bottom:1px solid #2c313c;vertical-align:top}
@@ -156,8 +163,31 @@ export function tokensPage(tokens: TokenPublic[], newSecret?: string): string {
 <h1>CI tokens</h1>
 ${
   newSecret
-    ? `<div class="secret">${esc(newSecret)}</div>
-<p class="warn">Copy this now — it won't be shown again.</p>`
+    ? `<div class="secretbox">
+  <input id="secretval" type="password" value="${esc(newSecret)}" readonly aria-label="New token">
+  <button class="iconbtn" id="revealbtn" type="button" aria-label="Reveal token">👁</button>
+  <button class="copybtn" id="copybtn" type="button">Copy</button>
+</div>
+<p class="warn">Auto-copied to your clipboard — it won't be shown again.</p>
+<script>
+(function(){
+  var inp=document.getElementById('secretval'),
+      cp=document.getElementById('copybtn'),
+      rv=document.getElementById('revealbtn');
+  function done(){cp.textContent='Copied!';cp.classList.add('copied');
+    setTimeout(function(){cp.textContent='Copy';cp.classList.remove('copied')},1500)}
+  function legacy(){var t=inp.type;inp.type='text';inp.select();
+    try{document.execCommand('copy');done()}catch(e){}inp.type=t}
+  function copy(){
+    if(navigator.clipboard&&navigator.clipboard.writeText){
+      navigator.clipboard.writeText(inp.value).then(done,legacy);
+    }else{legacy()}
+  }
+  cp.addEventListener('click',copy);
+  rv.addEventListener('click',function(){inp.type=inp.type==='password'?'text':'password'});
+  copy(); // clipboard write on first render may need a gesture; the Copy button is the reliable fallback
+})();
+</script>`
     : ""
 }
 <form method="POST" action="/tokens">
