@@ -127,10 +127,11 @@ ${error ? `<div class="err">${esc(error)}</div>` : ""}
   return layout("Sign in", body);
 }
 
-export function uploadPage(): string {
+export function uploadPage(error?: string): string {
   const placeholder = "Drop an .ipa or .apk here or tap to choose";
   const body = `
 <h1>Upload build</h1>
+${error ? `<div class="err">${esc(error)}</div>` : ""}
 <form method="POST" action="/upload" enctype="multipart/form-data">
 <label class="drop" id="drop">
   <span id="droptext">${placeholder}</span>

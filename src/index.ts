@@ -165,11 +165,17 @@ app.post(
   "/upload",
   bodyLimit({
     maxSize: config.maxUploadMb * 1024 * 1024,
-    onError: (c) => c.json({ error: "file too large" }, 413),
+    onError: (c) =>
+      hasSession(c)
+        ? c.html(uploadPage("File too large."), 413)
+        : c.json({ error: "file too large" }, 413),
   }),
   async (c) => {
-    // Either credential is accepted on the same endpoint (spec §3).
-    let authed = hasSession(c);
+    // Either credential is accepted on the same endpoint (spec §3). A session
+    // means a human at the browser form — send them to the install page; a
+    // bearer token means CI/an agent — answer with JSON.
+    let fromBrowser = hasSession(c);
+    let authed = fromBrowser;
     if (!authed) {
       const auth = c.req.header("Authorization") ?? "";
       const m = auth.match(/^Bearer\s+(.+)$/i);
@@ -177,17 +183,21 @@ app.post(
     }
     if (!authed) return c.json({ error: "unauthorized" }, 401);
 
+    // Browsers get the upload form re-rendered with the message; CI gets JSON.
+    const fail = (msg: string, status: 400 | 413) =>
+      fromBrowser ? c.html(uploadPage(msg), status) : c.json({ error: msg }, status);
+
     const body = await c.req.parseBody();
     const file = body.file;
     if (!(file instanceof File)) {
-      return c.json({ error: "missing file field" }, 400);
+      return fail("missing file field", 400);
     }
     // Platform is driven purely off the extension — the parser to use and the
     // on-disk filename both follow from it.
     const lower = file.name.toLowerCase();
     const platform = lower.endsWith(".apk") ? "android" : lower.endsWith(".ipa") ? "ios" : null;
     if (!platform) {
-      return c.json({ error: "file must be a .ipa or .apk" }, 400);
+      return fail("file must be a .ipa or .apk", 400);
     }
     const bytes = new Uint8Array(await file.arrayBuffer());
     // Optional display-name override (Android label lives in arsc, not parsed).
@@ -200,10 +210,13 @@ app.post(
           ? await parseApk(bytes, file.name, nameOverride)
           : await parseIpa(bytes, file.name);
     } catch (e) {
-      return c.json({ error: (e as Error).message }, 400);
+      return fail((e as Error).message, 400);
     }
 
     const { id, meta } = await saveUpload({ info, bytes, originalFilename: file.name });
+
+    // 303 so the browser re-issues the redirect as a GET (not a repeated POST).
+    if (fromBrowser) return c.redirect(`/i/${id}`, 303);
 
     return c.json({
       id,
